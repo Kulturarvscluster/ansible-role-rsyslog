@@ -1,15 +1,28 @@
 ---
-- name: Install
-  include_tasks: "setup-{{ ansible_os_family }}.yml"
+- package:
+    name: "{{ item }}"
+    state: latest
+    update_cache: yes
+  with_items:
+    - "rsyslog"
+    - "{{ rsyslog_additional_packages }}"
 
 - name: Remove useless configuration file
   file:
     path: "/etc/rsyslog.d/listen.conf"
     state: absent
 
+- name: create working dir
+  file:
+    path: "{{rsyslog_working_dir}}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0700
+
 - name: Set up configuration file
   template:
-    src: templates/rsyslog.conf.j2
+    src: templates/rsyslog.conf
     dest: "/etc/rsyslog.conf"
     owner: root
     group: root
@@ -25,7 +38,7 @@
   # We select all inputs that have a module=="imudp".
   # For each one, we select the listeners.
   # For each listener, we select the port which is mandatory in this case.
-  with_items: "{{ rsyslog_inputs
+  with_items: "{{ rsyslog_inputs|default([])
                   | selectattr('module', 'equalto', 'imudp')
                   | selectattr('listeners')
                   | map(attribute='listeners')
@@ -33,7 +46,7 @@
                   | map(attribute='port')
                   | list
                   | unique }}"
-  when: ansible_selinux
+  when: ansible_selinux|bool
 
 - name: SELinux (TCP)
   seport:
@@ -44,21 +57,21 @@
   # We select all inputs that don't have a module=="imudp".
   # For each one, we select the listeners.
   # For each listener, we select the port when it is defined.
-  with_items: "{{ rsyslog_inputs
+  with_items: "{{ rsyslog_inputs|default([])
                   | rejectattr('module', 'equalto', 'imudp')
                   | selectattr('listeners')
                   | map(attribute='listeners')
                   | sum(start=[])
                   | selectattr('port', 'defined')
                   | map(attribute='port')
-                  | list
+                  | list
                   | unique }}"
-  when: ansible_selinux
+  when: ansible_selinux|bool
 
 - name: Start service
   service:
     name: rsyslog
-    state: started
+    state: restarted
 
 - name: Enable service
   service:
